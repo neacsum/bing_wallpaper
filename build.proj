@@ -1,0 +1,6 @@
+<Project DefaultTargets="Build">  
+    <Target Name="Build">  
+        <MSBuild Projects="wallpaper.sln" Properties="Configuration=Debug;Platform=x64"/>  
+        <MSBuild Projects="wallpaper.sln" Properties="Configuration=Release;Platform=x64"/> 
+    </Target>
+</Project>

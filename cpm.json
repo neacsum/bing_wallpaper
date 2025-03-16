@@ -1,0 +1,19 @@
+{
+    "name": "bing_wallpaper",
+    "git": "git@github.com:neacsum/bing_wallpaper.git",
+    "build": [
+        {"cmd": "build.bat", "args": ["lib"]}
+    ], 
+    "depends": [
+        {
+            "name": "mlib",
+            "git": "git@github.com:neacsum/mlib.git",
+            "https": "https://github.com/neacsum/mlib.git"
+        },
+        {
+            "name": "utf8",
+            "git": "git@github.com:neacsum/utf8.git",
+            "https": "https://github.com/neacsum/utf8.git"
+        }
+    ]
+}
