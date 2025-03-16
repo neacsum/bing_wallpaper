@@ -2,7 +2,7 @@
     "name": "bing_wallpaper",
     "git": "git@github.com:neacsum/bing_wallpaper.git",
     "build": [
-        {"cmd": "build.bat", "args": ["lib"]}
+        {"cmd": "build.bat"}
     ], 
     "depends": [
         {
