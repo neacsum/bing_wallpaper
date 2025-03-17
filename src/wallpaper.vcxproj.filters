@@ -25,11 +25,21 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="bing-color.png">
-      <Filter>Resource Files</Filter>
-    </Image>
     <Image Include="bing.ico">
       <Filter>Resource Files</Filter>
     </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\include\resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\version.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="version.rc2">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

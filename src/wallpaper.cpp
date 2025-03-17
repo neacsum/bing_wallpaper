@@ -17,7 +17,7 @@
 #include <WtsApi32.h>
 
 #include "resource.h"
-
+#include "version.h"
 
 #pragma comment (lib, "wininet.lib")
 #pragma comment (lib, "Wtsapi32.lib")
@@ -96,70 +96,62 @@ mlib::erc get_image(HINTERNET hconn, const std::string& url, const std::filesyst
   DWORD rdlen;
   const wchar_t* types[] = {L"image/jpeg", 0};
   char response[4096];
-  mlib::erc ret = mlib::erc::success;
 
-  try {
-    req = HttpOpenRequest(hconn, L"GET", utf8::widen(url).c_str(), 0, 0, types, INTERNET_FLAG_SECURE, 0);
-    if (!req)
-    {
-      mlib::erc x(1);
-      x.message(std::format("get_image - HttpOpenRequest failed (0x{:x})", GetLastError()));
-      throw x;
-    }
-    if (!HttpSendRequest(req, NULL, 0, NULL, 0))
-    {
-      mlib::erc x(1);
-      x.message(std::format("get_image - HttpSendRequest failed (0x{:x})", GetLastError()));
-      throw x;
-    }
-
-    jpg = fopen(fname.generic_string().c_str(), "wb");
-    if (!jpg)
-    {
-      mlib::erc x(2);
-      x.message(std::format("get_image - Failed to open output file {}", strerror(errno)));
-      throw x;
-    }
-    size_t count = 0;
-    do
-    {
-      if (!InternetReadFile(req, response, sizeof(response), &rdlen))
-      {
-        mlib::erc x(1);
-        x.message(std::format("get_image - InternetReadFile failed (0x{:x})", GetLastError()));
-        throw x;
-      }
-      fwrite(response, sizeof(char), rdlen, jpg);
-      count += rdlen;
-    } while (rdlen);
-  }
-  catch (mlib::erc& x) 
+  req = HttpOpenRequest(hconn, L"GET", utf8::widen(url).c_str(), 0, 0, types, INTERNET_FLAG_SECURE, 0);
+  if (!req)
   {
-    if (jpg)
-    {
-      fclose(jpg);
-      remove(fname);
-      jpg = NULL;
-    }
-    x.reactivate();
-    ret = x;
+    mlib::erc ret(1);
+    ret.message(std::format("get_image - HttpOpenRequest failed (0x{:x})", GetLastError()));
+    return ret;
   }
-  if (jpg)
-    fclose(jpg);
-  if (req)
-    InternetCloseHandle(req);
 
-  return ret;
+  if (!HttpSendRequest(req, NULL, 0, NULL, 0))
+  {
+    mlib::erc ret(1);
+    ret.message(std::format("get_image - HttpSendRequest failed (0x{:x})", GetLastError()));
+    InternetCloseHandle (req);
+    return ret;
+  }
+
+  jpg = fopen(fname.generic_string().c_str(), "wb");
+  if (!jpg)
+  {
+    mlib::erc ret(2);
+    ret.message(std::format("get_image - Failed to open output file {}", strerror(errno)));
+    InternetCloseHandle (req);
+    return ret;
+  }
+  
+  size_t count = 0;
+  do
+  {
+    if (!InternetReadFile(req, response, sizeof(response), &rdlen))
+    {
+      mlib::erc ret(1);
+      ret.message(std::format("get_image - InternetReadFile failed (0x{:x})", GetLastError()));
+      InternetCloseHandle (req);
+      fclose (jpg);
+      remove (fname);
+      return ret;
+    }
+    fwrite(response, sizeof(char), rdlen, jpg);
+    count += rdlen;
+  } while (rdlen);
+
+  fclose (jpg);
+  InternetCloseHandle(req);
+
+  return mlib::erc::success;
 }
 
 mlib::erc update_wallpaper (bool force)
 {
   LPWSTR wwallpaper = NULL;
-  HRESULT ret = dwp->GetWallpaper(NULL, &wwallpaper);
+  HRESULT result = dwp->GetWallpaper(NULL, &wwallpaper);
   std::filesystem::path current_wallpaper;
-  if (ret == S_FALSE)
+  if (result == S_FALSE)
     syslog(LOG_INFO, "Cannot retrieve current wallpaper");
-  else if (ret != S_OK)
+  else if (result != S_OK)
     syslog(LOG_NOTICE, "GetWallpaper error 0x%x", GetLastError());
   else
   {
@@ -172,9 +164,9 @@ mlib::erc update_wallpaper (bool force)
   if (!hconn)
   {
     syslog(LOG_ERR, "InternetConnect failed (0x%x)", GetLastError());
-    mlib::erc x(4);
-    x.message(std::format("InternetConnect failed (0x{:x})", GetLastError()));
-    return x;
+    mlib::erc ret(4);
+    ret.message(std::format("InternetConnect failed (0x{:x})", GetLastError()));
+    return ret;
   }
 
   get_info(hconn);
@@ -202,89 +194,98 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
   int wmId, wmEvent;
   static HMENU menu = 0;
   static int gps_nodata_count = 0, tide_nodata_count = 0, draft_nodata_count = 0;
-  switch (message)
-  {
-  case WM_CREATE:
-    menu = LoadMenu(GetModuleHandle(NULL), MAKEINTRESOURCE(IDM_MENU));
-    WTSRegisterSessionNotification (hWnd, NOTIFY_FOR_THIS_SESSION);
-    break;
-
-  case WM_REFRESH:
-  case WM_THEMECHANGED:
-    syslog(LOG_INFO, "Theme changed.");
-    update_wallpaper(false);
-    break;
-
-  case WM_WTSSESSION_CHANGE:
-    syslog(LOG_INFO, "Session change event 0x%x", wParam);
-    if (wParam == WTS_SESSION_LOGON
-     || wParam == WTS_SESSION_UNLOCK)
+  try {
+    switch (message)
     {
-      Sleep(500);
-      update_wallpaper(false);
-    }
-    break;
-
-  case WM_COMMAND:
-    wmId = LOWORD(wParam);
-    wmEvent = HIWORD(wParam);
-    // Parse the menu selections:
-    switch (wmId)
-    {
-    case ID_UPDATE:
-      update_wallpaper (true);
-      nid.uFlags = NIF_MESSAGE | NIF_TIP;
-      wcsncpy(nid.szTip, utf8::widen(wp_description).c_str(), _countof(nid.szTip)); // Copy tooltip
-      Shell_NotifyIcon(NIM_MODIFY, &nid);
+    case WM_CREATE:
+      menu = LoadMenu (GetModuleHandle (NULL), MAKEINTRESOURCE (IDM_MENU));
+      WTSRegisterSessionNotification (hWnd, NOTIFY_FOR_THIS_SESSION);
       break;
 
-    case ID_ABOUT:
-      //DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
+    case WM_REFRESH:
+    case WM_THEMECHANGED:
+      syslog (LOG_INFO, "Theme changed.");
+      Sleep (500);
+      update_wallpaper (false);
       break;
 
-    case ID_EXIT:
-      DestroyWindow(hWnd);
+    case WM_WTSSESSION_CHANGE:
+      syslog (LOG_INFO, "Session change event 0x%x", wParam);
+      if (wParam == WTS_SESSION_LOGON
+       || wParam == WTS_SESSION_UNLOCK)
+      {
+        Sleep (1000);
+        update_wallpaper (false);
+      }
       break;
+
+    case WM_COMMAND:
+      wmId = LOWORD (wParam);
+      wmEvent = HIWORD (wParam);
+      // Parse the menu selections:
+      switch (wmId)
+      {
+      case ID_UPDATE:
+        update_wallpaper (true);
+        nid.uFlags = NIF_MESSAGE | NIF_TIP;
+        wcsncpy (nid.szTip, utf8::widen (wp_description).c_str (), _countof (nid.szTip)); // Copy tooltip
+        Shell_NotifyIcon (NIM_MODIFY, &nid);
+        break;
+
+      case ID_ABOUT:
+        utf8::MessageBox (hWnd,
+          std::string ("Bing Daily Wallpaper\n\nVersion: ") + std::to_string (FVERS_MAJOR) +
+          "." + std::to_string (FVERS_MINOR) + u8"\nCopyright © Mircea Neacsu 2025",
+          "Wallpaper", MB_ICONINFORMATION);
+        //DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
+        break;
+
+      case ID_EXIT:
+        DestroyWindow (hWnd);
+        break;
+      default:
+        return DefWindowProc (hWnd, message, wParam, lParam);
+      }
+      break;
+
+    case WM_TRAYNOTIFY:
+      switch (lParam)
+      {
+      case WM_LBUTTONDOWN:
+      case WM_LBUTTONDBLCLK:
+        PostMessage (hWnd, WM_COMMAND, ID_UPDATE, 0l);
+        break;
+
+      case WM_RBUTTONDOWN:
+      {
+        POINT pt;
+        GetCursorPos (&pt);
+        SetForegroundWindow (hWnd);
+        HMENU submenu = GetSubMenu (menu, 0);
+        TrackPopupMenuEx (submenu,
+          TPM_LEFTALIGN | TPM_LEFTBUTTON,
+          pt.x, pt.y, hWnd, NULL);
+        PostMessage (hWnd, WM_NULL, 0, 0); //per MS KB Q135788
+        break;
+      }
+      }
+      break;
+
+    case WM_DESTROY:
+      WTSUnRegisterSessionNotification (hWnd);
+      DestroyMenu (menu);
+      nid.uFlags = NIF_ICON;
+      Shell_NotifyIcon (NIM_DELETE, &nid);
+
+      PostQuitMessage (0);
+      break;
+
     default:
-      return DefWindowProc(hWnd, message, wParam, lParam);
+      return DefWindowProc (hWnd, message, wParam, lParam);
     }
-    break;
-
-  case WM_TRAYNOTIFY:
-    switch (lParam)
-    {
-    case WM_RBUTTONDOWN:
-      //will put here a 2nd menu if needed
-    case WM_LBUTTONDOWN:
-    {
-      POINT pt;
-      GetCursorPos(&pt);
-      SetForegroundWindow(hWnd);
-      HMENU submenu = GetSubMenu(menu, 0);
-      TrackPopupMenuEx(submenu,
-        TPM_LEFTALIGN | TPM_LEFTBUTTON,
-        pt.x, pt.y, hWnd, NULL);
-      PostMessage(hWnd, WM_NULL, 0, 0); //per MS KB Q135788
-      break;
-    }
-
-    case WM_LBUTTONDBLCLK:
-      PostMessage(hWnd, WM_COMMAND, ID_UPDATE, 0l);
-      break;
-    }
-    break;
-
-  case WM_DESTROY:
-    WTSUnRegisterSessionNotification(hWnd);
-    DestroyMenu(menu);
-    nid.uFlags = NIF_ICON;
-    Shell_NotifyIcon(NIM_DELETE, &nid);
-
-    PostQuitMessage(0);
-    break;
-
-  default:
-    return DefWindowProc(hWnd, message, wParam, lParam);
+  }
+  catch (mlib::erc& x) {
+    syslog (LOG_ERR, "Exception %d (%s)", (int)x, x.message ());
   }
   return 0;
 }

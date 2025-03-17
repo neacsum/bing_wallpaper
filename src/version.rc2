@@ -1,0 +1,36 @@
+#ifdef APSTUDIO_INVOKED
+    #error this file is not editable by Visual C++
+#endif //APSTUDIO_INVOKED
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+1 VERSIONINFO
+FILEVERSION PVERS_MAJOR , PVERS_MINOR , FVERS_MAJOR , FVERS_MINOR
+PRODUCTVERSION PVERS_MAJOR , PVERS_MINOR , 0, 0
+FILEFLAGSMASK 0x3f
+FILEFLAGS 0
+FILEOS VOS__WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "VarFileInfo"
+    BEGIN
+    VALUE "Translation", 0x409, 0x4E4
+    END
+
+    BLOCK "StringFileInfo"
+    BEGIN
+    BLOCK "040904E4"		//English
+      BEGIN
+        VALUE "InternalName", INTERNAL_NAME
+        VALUE "OriginalFilename", ORIG_FILENAME
+        VALUE "FileDescription", FDESC_STRING
+        VALUE "CompanyName", COMP_STRING
+        VALUE "FileVersion", DOT4(PVERS_MAJOR,PVERS_MINOR,FVERS_MAJOR,FVERS_MINOR)
+        VALUE "LegalCopyright", LEGAL_STRING
+        VALUE "ProductVersion", DOT2(PVERS_MAJOR,PVERS_MINOR)
+      END
+    END
+END
