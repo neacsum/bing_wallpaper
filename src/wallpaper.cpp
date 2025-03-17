@@ -156,7 +156,7 @@ mlib::erc update_wallpaper (bool force)
   else
   {
     current_wallpaper = wwallpaper;
-    syslog(LOG_INFO, "Current wallpaper is %s", current_wallpaper.generic_string().c_str());
+    syslog(LOG_DEBUG, "Current wallpaper is %s", current_wallpaper.generic_string().c_str());
   }
 
   auto hconn = InternetConnect(hhttp, BING_SERVER, INTERNET_DEFAULT_HTTPS_PORT,
@@ -176,7 +176,7 @@ mlib::erc update_wallpaper (bool force)
   if (!std::filesystem::exists(new_wallpaper))
   {
     get_image(hconn, img["url"].to_str(), new_wallpaper);
-    syslog(LOG_INFO, "Downloaded image %s", img["url"].to_str().c_str());
+    syslog(LOG_DEBUG, "Downloaded image %s", img["url"].to_str().c_str());
   }
   if (force || new_wallpaper != current_wallpaper)
   {
@@ -204,7 +204,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_REFRESH:
     case WM_THEMECHANGED:
-      syslog (LOG_INFO, "Theme changed.");
+      syslog (LOG_INFO, "Theme change event");
       Sleep (500);
       update_wallpaper (false);
       break;
@@ -226,6 +226,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
       switch (wmId)
       {
       case ID_UPDATE:
+        syslog (LOG_DEBUG, "Update command received", wParam);
         update_wallpaper (true);
         nid.uFlags = NIF_MESSAGE | NIF_TIP;
         wcsncpy (nid.szTip, utf8::widen (wp_description).c_str (), _countof (nid.szTip)); // Copy tooltip
