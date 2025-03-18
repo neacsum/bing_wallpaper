@@ -12,10 +12,12 @@
 #define _WIN32_WINNT _WIN32_WINNT_WIN10
 #endif
 
-#define PVERS_MAJOR     0
-#define PVERS_MINOR     1
 #define FVERS_MAJOR     0
-#define FVERS_MINOR     1
+#define FVERS_MINOR     2
+
+
+#define PVERS_MAJOR     FVERS_MAJOR
+#define PVERS_MINOR     FVERS_MINOR
 
 #define COMP_STRING     "Mircea Neacsu"
 #define LEGAL_STRING    "Copyright (c) Mircea Neacsu 2025"

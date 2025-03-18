@@ -24,6 +24,8 @@
 
 #define WNDCLASSNAME      L"bing_wallpaper"
 #define BING_SERVER       L"bing.com"
+#define DELAY_MS          500 //delay before restoring wallpaper
+
 #define WM_TRAYNOTIFY     (WM_USER+1)
 #define WM_REFRESH        (WM_USER+2)
 
@@ -182,6 +184,12 @@ mlib::erc update_wallpaper (bool force)
   {
     dwp->SetWallpaper(NULL, new_wallpaper.c_str());
     syslog(LOG_INFO, "Changed wallpaper to %s", new_wallpaper.generic_string().c_str());
+    if (nid.cbSize == sizeof (NOTIFYICONDATA))
+    {
+      nid.uFlags = NIF_MESSAGE | NIF_TIP;
+      wcsncpy (nid.szTip, utf8::widen (wp_description).c_str (), _countof (nid.szTip)); // Copy tooltip
+      Shell_NotifyIcon (NIM_MODIFY, &nid);
+    }
   }
 
   InternetCloseHandle(hconn);
@@ -205,7 +213,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_REFRESH:
     case WM_THEMECHANGED:
       syslog (LOG_INFO, "Theme change event");
-      Sleep (500);
+      Sleep (DELAY_MS);
       update_wallpaper (false);
       break;
 
@@ -228,9 +236,6 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
       case ID_UPDATE:
         syslog (LOG_DEBUG, "Update command received", wParam);
         update_wallpaper (true);
-        nid.uFlags = NIF_MESSAGE | NIF_TIP;
-        wcsncpy (nid.szTip, utf8::widen (wp_description).c_str (), _countof (nid.szTip)); // Copy tooltip
-        Shell_NotifyIcon (NIM_MODIFY, &nid);
         break;
 
       case ID_ABOUT:
@@ -346,7 +351,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*lpCmdLine*/, int /*
     return 1;
   }
 
-  //Register main window
+  //Register window class
   WNDCLASSEX wcex;
   memset(&wcex, 0, sizeof(WNDCLASSEX));
   wcex.cbSize = sizeof(WNDCLASSEX);
@@ -390,9 +395,9 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*lpCmdLine*/, int /*
     return 1;
   }
 
+  memset (&nid, 0, sizeof (NOTIFYICONDATA));
   update_wallpaper(false);
 
-  memset(&nid, 0, sizeof(NOTIFYICONDATA));
   nid.cbSize = sizeof(NOTIFYICONDATA);
   nid.hIcon = wcex.hIconSm;
   nid.hWnd = mainWnd;
