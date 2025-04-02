@@ -24,7 +24,7 @@
 
 #define WNDCLASSNAME      L"bing_wallpaper"
 #define BING_SERVER       L"bing.com"
-#define DELAY_MS          500 //delay before restoring wallpaper
+#define DELAY_MS          1000 //delay before restoring wallpaper
 
 #define WM_TRAYNOTIFY     (WM_USER+1)
 #define WM_REFRESH        (WM_USER+2)
@@ -146,21 +146,39 @@ mlib::erc get_image(HINTERNET hconn, const std::string& url, const std::filesyst
   return mlib::erc::success;
 }
 
-mlib::erc update_wallpaper (bool force)
+void restore_wallpaper ()
 {
   LPWSTR wwallpaper = NULL;
-  HRESULT result = dwp->GetWallpaper(NULL, &wwallpaper);
+  HRESULT result = dwp->GetWallpaper (NULL, &wwallpaper);
   std::filesystem::path current_wallpaper;
   if (result == S_FALSE)
-    syslog(LOG_INFO, "Cannot retrieve current wallpaper");
+    syslog (LOG_INFO, "Cannot retrieve current wallpaper");
   else if (result != S_OK)
-    syslog(LOG_NOTICE, "GetWallpaper error 0x%x", GetLastError());
+    syslog (LOG_NOTICE, "GetWallpaper error 0x%x", GetLastError ());
   else
   {
     current_wallpaper = wwallpaper;
-    syslog(LOG_DEBUG, "Current wallpaper is %s", current_wallpaper.generic_string().c_str());
   }
 
+  std::filesystem::path our_wallpaper (wp_folder);
+  our_wallpaper /= img["startdate"].to_str () + ".jpg";
+  if (current_wallpaper != our_wallpaper)
+  {
+    dwp->SetWallpaper (NULL, our_wallpaper.c_str ());
+    syslog (LOG_DEBUG, "Current wallpaper is %s", current_wallpaper.generic_string ().c_str ());
+    syslog (LOG_INFO, "Changed wallpaper to %s", our_wallpaper.generic_string ().c_str ());
+    if (nid.cbSize == sizeof (NOTIFYICONDATA))
+    {
+      nid.uFlags = NIF_MESSAGE | NIF_TIP;
+      wcsncpy (nid.szTip, utf8::widen (wp_description).c_str (), _countof (nid.szTip)); // Copy tooltip
+      Shell_NotifyIcon (NIM_MODIFY, &nid);
+    }
+  }
+}
+
+// Check current Bing wallpaper and download a new one if needed
+mlib::erc update_wallpaper ()
+{
   auto hconn = InternetConnect(hhttp, BING_SERVER, INTERNET_DEFAULT_HTTPS_PORT,
     NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
   if (!hconn)
@@ -173,24 +191,14 @@ mlib::erc update_wallpaper (bool force)
 
   get_info(hconn);
 
-  std::filesystem::path new_wallpaper(wp_folder);
-  new_wallpaper /= img["startdate"].to_str() + ".jpg";
-  if (!std::filesystem::exists(new_wallpaper))
+  std::filesystem::path new_wallpaper (wp_folder);
+  new_wallpaper /= img["startdate"].to_str () + ".jpg";
+  if (!std::filesystem::exists (new_wallpaper))
   {
-    get_image(hconn, img["url"].to_str(), new_wallpaper);
-    syslog(LOG_DEBUG, "Downloaded image %s", img["url"].to_str().c_str());
+    get_image (hconn, img["url"].to_str (), new_wallpaper);
+    syslog (LOG_DEBUG, "Downloaded image %s", img["url"].to_str ().c_str ());
   }
-  if (force || new_wallpaper != current_wallpaper)
-  {
-    dwp->SetWallpaper(NULL, new_wallpaper.c_str());
-    syslog(LOG_INFO, "Changed wallpaper to %s", new_wallpaper.generic_string().c_str());
-    if (nid.cbSize == sizeof (NOTIFYICONDATA))
-    {
-      nid.uFlags = NIF_MESSAGE | NIF_TIP;
-      wcsncpy (nid.szTip, utf8::widen (wp_description).c_str (), _countof (nid.szTip)); // Copy tooltip
-      Shell_NotifyIcon (NIM_MODIFY, &nid);
-    }
-  }
+  restore_wallpaper ();
 
   InternetCloseHandle(hconn);
 
@@ -200,21 +208,33 @@ mlib::erc update_wallpaper (bool force)
 LRESULT WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
   int wmId, wmEvent;
+  static UINT_PTR update_timerId = 1, restore_timerId = 2;
   static HMENU menu = 0;
-  static int gps_nodata_count = 0, tide_nodata_count = 0, draft_nodata_count = 0;
   try {
     switch (message)
     {
     case WM_CREATE:
       menu = LoadMenu (GetModuleHandle (NULL), MAKEINTRESOURCE (IDM_MENU));
       WTSRegisterSessionNotification (hWnd, NOTIFY_FOR_THIS_SESSION);
+      update_timerId = SetTimer (hWnd, 1, 3600 * 1000, NULL);
+      restore_timerId = SetTimer (hWnd, 2, 10 * 1000, NULL);
+      break;
+
+    case WM_TIMER:
+      if (wParam == update_timerId)
+      {
+        syslog (LOG_INFO, "Checking for new wallpaper");
+        update_wallpaper ();
+      }
+      else if (wParam == restore_timerId)
+        restore_wallpaper ();
       break;
 
     case WM_REFRESH:
     case WM_THEMECHANGED:
       syslog (LOG_INFO, "Theme change event");
       Sleep (DELAY_MS);
-      update_wallpaper (false);
+      update_wallpaper ();
       break;
 
     case WM_WTSSESSION_CHANGE:
@@ -222,8 +242,8 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
       if (wParam == WTS_SESSION_LOGON
        || wParam == WTS_SESSION_UNLOCK)
       {
-        Sleep (1000);
-        update_wallpaper (false);
+        Sleep (DELAY_MS);
+        update_wallpaper ();
       }
       break;
 
@@ -235,13 +255,12 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
       {
       case ID_UPDATE:
         syslog (LOG_DEBUG, "Update command received", wParam);
-        update_wallpaper (true);
+        update_wallpaper ();
         break;
 
       case ID_ABOUT:
         utf8::MessageBox (hWnd,
-          std::string ("Bing Daily Wallpaper\n\nVersion: ") + std::to_string (FVERS_MAJOR) +
-          "." + std::to_string (FVERS_MINOR) + u8"\nCopyright © Mircea Neacsu 2025",
+          FDESC_STRING "\n\nVersion: " FVERS_STRING "\n" LEGAL_STRING,
           "Wallpaper", MB_ICONINFORMATION);
         //DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
         break;
@@ -280,6 +299,9 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_DESTROY:
       WTSUnRegisterSessionNotification (hWnd);
       DestroyMenu (menu);
+      KillTimer (hWnd, update_timerId);
+      KillTimer (hWnd, restore_timerId);
+
       nid.uFlags = NIF_ICON;
       Shell_NotifyIcon (NIM_DELETE, &nid);
 
@@ -291,7 +313,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
   }
   catch (mlib::erc& x) {
-    syslog (LOG_ERR, "Exception %d (%s)", (int)x, x.message ());
+    syslog (LOG_ERR, "Exception %d (%s)", (int)x, x.message ().c_str());
   }
   return 0;
 }
@@ -299,7 +321,7 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*lpCmdLine*/, int /*nCmdShow*/)
 {
-  openlog("bing_wallpaper");
+  openlog("wallpaper");
 
   syslog(LOG_NOTICE,  "started...");
   HWND prevWnd;
@@ -396,7 +418,7 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*lpCmdLine*/, int /*
   }
 
   memset (&nid, 0, sizeof (NOTIFYICONDATA));
-  update_wallpaper(false);
+  update_wallpaper();
 
   nid.cbSize = sizeof(NOTIFYICONDATA);
   nid.hIcon = wcex.hIconSm;
